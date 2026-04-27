@@ -76,7 +76,6 @@ export default function App() {
     <div className="page">
       <main className="shell">
         <section className="hero">
-          <p className="eyebrow">🎬 React + Electron + yt-dlp</p>
           <h1>Téléchargeur YouTube local</h1>
           <p className="subtitle">Colle une URL, vérifie l’aperçu, choisis ton format et lance le téléchargement en local.</p>
         </section>

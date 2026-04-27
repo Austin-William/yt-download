@@ -1,7 +1,7 @@
 {
-  "name": "yt-dlp-electron-app",
+  "name": "youtube-downloader-ui",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
@@ -23,8 +23,8 @@
     "wait-on": "^8.0.1"
   },
   "build": {
-    "appId": "com.example.ytdlpgui",
-    "productName": "yt-dlp Desktop",
+    "appId": "com.app.youtube-downloader-ui",
+    "productName": "Youtube Downloader",
     "files": [
       "dist/**/*",
       "electron/**/*",
