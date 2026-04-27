@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 function extractVideoId(value) {
   if (!value) return ''
   const trimmed = value.trim()
+
   const patterns = [
     /(?:youtube\.com\/watch\?v=)([^&]+)/,
     /(?:youtu\.be\/)([^?&/]+)/,
@@ -20,11 +21,20 @@ function extractVideoId(value) {
 }
 
 const presets = [
-  { label: 'Meilleure qualité', value: 'bestvideo+bestaudio/best' },
+  { label: 'Best quality', value: 'bestvideo+bestaudio/best' },
   { label: '1080p max', value: 'bestvideo[height<=1080]+bestaudio/best[height<=1080]' },
   { label: '720p max', value: 'bestvideo[height<=720]+bestaudio/best[height<=720]' },
-  { label: 'Audio MP3', value: 'audio' }
+  { label: 'MP3 audio', value: 'audio' }
 ]
+
+function getLastLogLines(text, maxLines = 10) {
+  if (!text) return 'No logs yet.'
+  return text
+    .split(/\r?\n/)
+    .filter(line => line.trim() !== '')
+    .slice(-maxLines)
+    .join('\n')
+}
 
 export default function App() {
   const [url, setUrl] = useState('')
@@ -32,12 +42,13 @@ export default function App() {
   const [outputDir, setOutputDir] = useState('')
   const [embedMetadata, setEmbedMetadata] = useState(true)
   const [embedThumbnail, setEmbedThumbnail] = useState(false)
-  const [status, setStatus] = useState('Prêt')
-  const [logs, setLogs] = useState('Aucun log pour le moment.')
+  const [status, setStatus] = useState('Ready')
+  const [logs, setLogs] = useState('No logs yet.')
   const [busy, setBusy] = useState(false)
 
   const videoId = useMemo(() => extractVideoId(url), [url])
   const previewImage = videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : ''
+  const displayedLogs = useMemo(() => getLastLogLines(logs, 10), [logs])
 
   async function chooseFolder() {
     const folder = await window.desktopAPI.pickFolder()
@@ -46,12 +57,12 @@ export default function App() {
 
   async function startDownload() {
     if (!url.trim()) {
-      setStatus('Entre une URL valide.')
+      setStatus('Enter a valid URL.')
       return
     }
 
     setBusy(true)
-    setStatus('Téléchargement en cours...')
+    setStatus('Downloading...')
     setLogs('')
 
     try {
@@ -62,91 +73,117 @@ export default function App() {
         embedMetadata,
         embedThumbnail
       })
+
       setLogs(result)
-      setStatus('Téléchargement terminé.')
+      setStatus('Download completed.')
     } catch (error) {
       setLogs(String(error))
-      setStatus('Erreur pendant le téléchargement.')
+      setStatus('Download failed.')
     } finally {
       setBusy(false)
     }
   }
 
+  // https://www.youtube.com/watch?v=W3dqo7nz_kE&t=3s
+
   return (
     <div className="page">
-      <main className="shell">
-        <section className="hero">
-          <h1>Téléchargeur YouTube local</h1>
-          <p className="subtitle">Colle une URL, vérifie l’aperçu, choisis ton format et lance le téléchargement en local.</p>
-        </section>
+      <div className="shell">
+        <header className="hero">
+          <h1>YouTube Downloader</h1>
+          <p className="subtitle">
+            Paste a URL, check the preview, choose a format, and download locally.
+          </p>
+        </header>
 
         <section className="card">
           <label>
-            🔗 URL YouTube
+            YouTube URL
             <input
-              type="text"
-              placeholder="https://www.youtube.com/watch?v=..."
               value={url}
               onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://www.youtube.com/watch?v=..."
             />
           </label>
 
           <div className="grid2">
             <label>
-              🎚️ Qualité
+              Format
               <select value={format} onChange={(e) => setFormat(e.target.value)}>
                 {presets.map((preset) => (
-                  <option key={preset.value} value={preset.value}>{preset.label}</option>
+                  <option key={preset.value} value={preset.value}>
+                    {preset.label}
+                  </option>
                 ))}
               </select>
             </label>
 
             <label>
-              📁 Dossier de sortie
+              Output folder
               <div className="inlineRow">
                 <input
-                  type="text"
-                  placeholder="Choisir un dossier"
                   value={outputDir}
                   onChange={(e) => setOutputDir(e.target.value)}
+                  placeholder="Default downloads folder"
                 />
-                <button type="button" className="secondaryBtn" onClick={chooseFolder}>Choisir</button>
+                <button type="button" className="secondaryBtn" onClick={chooseFolder}>
+                  Browse
+                </button>
               </div>
             </label>
           </div>
 
           <div className="checks">
-            <label className="check"><input type="checkbox" checked={embedMetadata} onChange={(e) => setEmbedMetadata(e.target.checked)} /> 🧾 Métadonnées</label>
-            <label className="check"><input type="checkbox" checked={embedThumbnail} onChange={(e) => setEmbedThumbnail(e.target.checked)} /> 🖼️ Miniature</label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={embedMetadata}
+                onChange={(e) => setEmbedMetadata(e.target.checked)}
+              />
+              Embed metadata
+            </label>
+
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={embedThumbnail}
+                onChange={(e) => setEmbedThumbnail(e.target.checked)}
+              />
+              Embed thumbnail
+            </label>
           </div>
 
-          <button type="button" className="primaryBtn" onClick={startDownload} disabled={busy}>
-            {busy ? 'Téléchargement...' : '⬇️ Télécharger'}
+          <button className="primaryBtn" onClick={startDownload} disabled={busy}>
+            {busy ? 'Downloading...' : 'Start download'}
           </button>
         </section>
 
-        <section className="card previewCard">
-          {!videoId ? (
-            <div className="emptyState">
-              <div className="emptyIcon">🎥</div>
-              <p>Entre une URL YouTube valide pour voir l’aperçu.</p>
-            </div>
-          ) : (
-            <div className="previewGrid">
-              <img src={previewImage} alt="Aperçu vidéo" />
-              <div className="metaBox">
-                <p><strong>ID :</strong> {videoId}</p>
-                <p><strong>Statut :</strong> {status}</p>
+        <section className="card previewGrid">
+          <div>
+            {previewImage ? (
+              <img src={previewImage} alt="Video preview" />
+            ) : (
+              <div className="emptyState">
+                <div>
+                  <div className="emptyIcon">🎬</div>
+                  <p>Enter a valid YouTube URL to see the preview.</p>
+                </div>
               </div>
-            </div>
-          )}
-        </section>
+            )}
+          </div>
 
-        <section className="card">
-          <h2>📝 Logs</h2>
-          <pre>{logs}</pre>
+          <div className="metaBox">
+            <p><strong>ID:</strong> {videoId || 'N/A'}</p>
+            <p><strong>Status:</strong> {status}</p>
+
+            <div className="logsHeader">
+              <strong>Logs</strong>
+            </div>
+
+            <pre className="logsPre">{displayedLogs}</pre>
+          </div>
         </section>
-      </main>
+      </div>
     </div>
   )
 }

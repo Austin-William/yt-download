@@ -58,6 +58,8 @@ ipcMain.handle('download-video', async (_event, payload) => {
     args.push('-x', '--audio-format', 'mp3')
   } else {
     args.push('-f', payload.format)
+    args.push('-S', 'res,ext:mp4:m4a')
+    args.push('--recode-video', 'mp4')
   }
 
   const outputDir = payload.outputDir && payload.outputDir.trim() ? payload.outputDir.trim() : app.getPath('downloads')
