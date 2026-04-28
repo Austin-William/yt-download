@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 function extractVideoId(value) {
   if (!value) return ''
@@ -45,6 +45,7 @@ export default function App() {
   const [status, setStatus] = useState('Ready')
   const [logs, setLogs] = useState('No logs yet.')
   const [busy, setBusy] = useState(false)
+  const logsRef = useRef(null)
 
   const videoId = useMemo(() => extractVideoId(url), [url])
   const previewImage = videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : ''
@@ -66,15 +67,13 @@ export default function App() {
     setLogs('')
 
     try {
-      const result = await window.desktopAPI.downloadVideo({
+      await window.desktopAPI.downloadVideo({
         url,
         format,
         outputDir,
         embedMetadata,
         embedThumbnail
       })
-
-      setLogs(result)
       setStatus('Download completed.')
     } catch (error) {
       setLogs(String(error))
@@ -84,7 +83,26 @@ export default function App() {
     }
   }
 
-  // https://www.youtube.com/watch?v=W3dqo7nz_kE&t=3s
+  useEffect(() => {
+    if (!window.desktopAPI?.onDownloadLog) return
+
+    const unsubscribe = window.desktopAPI.onDownloadLog((message) => {
+      setLogs((prev) => {
+        const current = prev === 'No logs yet.' ? '' : prev
+        return current + message
+      })
+    })
+
+    return () => {
+      if (unsubscribe) unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (logsRef.current) {
+      logsRef.current.scrollTop = logsRef.current.scrollHeight
+    }
+  }, [logs])
 
   return (
     <div className="page">
@@ -176,11 +194,7 @@ export default function App() {
             <p><strong>ID:</strong> {videoId || 'N/A'}</p>
             <p><strong>Status:</strong> {status}</p>
 
-            <div className="logsHeader">
-              <strong>Logs</strong>
-            </div>
-
-            <pre className="logsPre">{displayedLogs}</pre>
+            <pre ref={logsRef} className="logsPre">{logs}</pre>
           </div>
         </section>
       </div>

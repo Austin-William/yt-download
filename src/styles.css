@@ -168,9 +168,40 @@ select {
 
 .previewGrid {
   display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 16px;
-  align-items: start;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: stretch;
+}
+
+.previewPane {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.previewImage {
+  width: 100%;
+  max-width: 100%;
+  display: block;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+}
+
+.logsPre {
+  height: 260px;
+  overflow-y: auto;
+  background: #0f172a;
+  color: #e2e8f0;
+  border: 1px solid #1f2937;
+  border-radius: 8px;
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .logsHeader {

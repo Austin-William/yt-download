@@ -49,9 +49,8 @@ ipcMain.handle('pick-folder', async () => {
   return result.canceled ? '' : result.filePaths[0]
 })
 
-ipcMain.handle('download-video', async (_event, payload) => {
+ipcMain.handle('download-video', async (event, payload) => {
   const exePath = getYtDlpPath()
-
   const args = []
 
   if (payload.format === 'audio') {
@@ -62,7 +61,11 @@ ipcMain.handle('download-video', async (_event, payload) => {
     args.push('--recode-video', 'mp4')
   }
 
-  const outputDir = payload.outputDir && payload.outputDir.trim() ? payload.outputDir.trim() : app.getPath('downloads')
+  const outputDir =
+    payload.outputDir && payload.outputDir.trim()
+      ? payload.outputDir.trim()
+      : app.getPath('downloads')
+
   args.push('-o', path.join(outputDir, '%(title)s.%(ext)s'))
   args.push('--no-playlist')
 
@@ -75,17 +78,18 @@ ipcMain.handle('download-video', async (_event, payload) => {
     const child = spawn(exePath, args, { windowsHide: true })
     let output = ''
 
-    child.stdout.on('data', (data) => {
-      output += data.toString()
-    })
+    const pushLog = (chunk) => {
+      const text = chunk.toString()
+      output += text
+      event.sender.send('download-log', text)
+    }
 
-    child.stderr.on('data', (data) => {
-      output += data.toString()
-    })
+    child.stdout.on('data', pushLog)
+    child.stderr.on('data', pushLog)
 
     child.on('close', (code) => {
-      if (code === 0) resolve(output || 'Téléchargement terminé.')
-      else reject(output || `Erreur code ${code}`)
+      if (code === 0) resolve(output || 'Download completed.\n')
+      else reject(output || `Error code ${code}\n`)
     })
 
     child.on('error', (error) => {
