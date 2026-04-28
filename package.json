@@ -8,7 +8,9 @@
     "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
     "build": "vite build",
     "start": "electron .",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder -w",
+    "dist:mac": "npm run build && electron-builder -m"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -32,12 +34,18 @@
     ],
     "extraResources": [
       {
-        "from": "bin/yt-dlp.exe",
-        "to": "bin/yt-dlp.exe"
+        "from": "bin",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
       "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
     }
   }
 }

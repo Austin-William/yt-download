@@ -47,6 +47,8 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [container, setContainer] = useState('mp4')
   const [videoInfo, setVideoInfo] = useState(null)
+  const [progress, setProgress] = useState(0)
+  const [downloadPhase, setDownloadPhase] = useState('idle')
   const logsRef = useRef(null)
 
   const videoId = useMemo(() => extractVideoId(url), [url])
@@ -91,6 +93,8 @@ export default function App() {
     }
 
     setBusy(true)
+    setProgress(0)
+    setDownloadPhase('downloading')
     setStatus('Downloading...')
     setLogs('')
 
@@ -103,9 +107,12 @@ export default function App() {
         embedMetadata,
         embedThumbnail
       })
+      setProgress(100)
+      setDownloadPhase('completed')
       setStatus('Download completed.')
     } catch (error) {
       setLogs(String(error))
+      setDownloadPhase('error')
       setStatus('Download failed.')
     } finally {
       setBusy(false)
@@ -154,6 +161,30 @@ export default function App() {
 
     run()
   }, [url, format, container])
+
+  useEffect(() => {
+    if (!window.desktopAPI?.onDownloadProgress) return
+
+    const unsubscribe = window.desktopAPI.onDownloadProgress((value) => {
+      setProgress(Number.isFinite(value) ? value : 0)
+    })
+
+    return () => {
+      if (unsubscribe) unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!window.desktopAPI?.onDownloadPhase) return
+
+    const unsubscribe = window.desktopAPI.onDownloadPhase((value) => {
+      setDownloadPhase(value)
+    })
+
+    return () => {
+      if (unsubscribe) unsubscribe()
+    }
+  }, [])
 
   return (
     <div className="page">
@@ -264,6 +295,29 @@ export default function App() {
                 <p><strong>Estimated size:</strong> {formatBytes(videoInfo?.estimatedSize)}</p>
               </>
             )}
+            <p>
+              <strong>Progress:</strong>{' '}
+              {downloadPhase === 'converting'
+                ? 'Converting...'
+                : downloadPhase === 'completed'
+                  ? 'Completed'
+                  : downloadPhase === 'error'
+                    ? 'Failed'
+                    : `${Math.round(progress)}%`}
+            </p>
+            <div className={`progressBar ${downloadPhase}`}>
+              <div
+                className={`progressFill ${downloadPhase}`}
+                style={{
+                  width:
+                    downloadPhase === 'completed'
+                      ? '100%'
+                      : downloadPhase === 'converting'
+                        ? '100%'
+                        : `${Math.max(0, Math.min(progress, 100))}%`
+                }}
+              />
+            </div>
 
             <pre ref={logsRef} className="logsPre">{logs}</pre>
           </div>

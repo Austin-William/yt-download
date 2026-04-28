@@ -22,6 +22,42 @@ function getYtDlpPath() {
   return path.join(process.resourcesPath, 'bin', binaryName)
 }
 
+function getFfmpegPath() {
+  let binaryName
+
+  if (process.platform === 'win32') {
+    binaryName = 'ffmpeg.exe'
+  } else if (process.platform === 'darwin') {
+    binaryName = 'ffmpeg'
+  } else {
+    throw new Error(`Unsupported platform: ${process.platform}`)
+  }
+
+  if (isDev) {
+    return path.join(__dirname, '..', 'bin', binaryName)
+  }
+
+  return path.join(process.resourcesPath, 'bin', binaryName)
+}
+
+function getNodePath() {
+  let binaryName
+
+  if (process.platform === 'win32') {
+    binaryName = 'node.exe'
+  } else if (process.platform === 'darwin') {
+    binaryName = 'node'
+  } else {
+    throw new Error(`Unsupported platform: ${process.platform}`)
+  }
+
+  if (isDev) {
+    return path.join(__dirname, '..', 'bin', binaryName)
+  }
+
+  return path.join(process.resourcesPath, 'bin', binaryName)
+}
+
 function ensureExecutable(filePath) {
   if (process.platform !== 'darwin') return
 
@@ -72,10 +108,22 @@ ipcMain.handle('pick-folder', async () => {
 
 ipcMain.handle('get-video-info', async (_event, payload) => {
   const exePath = getYtDlpPath()
+  const nodePath = getNodePath()
+  const ffmpegPath = getFfmpegPath()
+
   ensureExecutable(exePath)
+  ensureExecutable(nodePath)
+  ensureExecutable(ffmpegPath)
 
   return await new Promise((resolve, reject) => {
-    const args = ['-J', '--no-playlist', payload.url]
+    const args = [
+      '--no-js-runtimes',
+      '--js-runtimes', `node:${nodePath}`,
+      '--ffmpeg-location', ffmpegPath,
+      '-J',
+      '--no-playlist',
+      payload.url
+    ]
     const child = spawn(exePath, args, { windowsHide: true })
 
     let output = ''
@@ -140,10 +188,15 @@ ipcMain.handle('get-video-info', async (_event, payload) => {
     })
   })
 })
-
 ipcMain.handle('download-video', async (event, payload) => {
   const exePath = getYtDlpPath()
+  const nodePath = getNodePath()
+  const ffmpegPath = getFfmpegPath()
   const args = []
+
+  ensureExecutable(exePath)
+  ensureExecutable(nodePath)
+  ensureExecutable(ffmpegPath)
 
   if (payload.format === 'audio') {
     args.push('-x', '--audio-format', 'mp3')
@@ -158,6 +211,16 @@ ipcMain.handle('download-video', async (event, payload) => {
       ? payload.outputDir.trim()
       : app.getPath('downloads')
 
+  args.push('--no-js-runtimes')
+  args.push('--js-runtimes', `node:${nodePath}`)
+  args.push('--ffmpeg-location', ffmpegPath)
+
+  args.push(
+    '--newline',
+    '--progress-template',
+    'PROGRESS|%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._speed_str)s|%(progress._eta_str)s'
+  )
+
   args.push('-o', path.join(outputDir, '%(title)s.%(ext)s'))
   args.push('--no-playlist')
 
@@ -169,19 +232,53 @@ ipcMain.handle('download-video', async (event, payload) => {
   return await new Promise((resolve, reject) => {
     const child = spawn(exePath, args, { windowsHide: true })
     let output = ''
+    let buffer = ''
 
-    const pushLog = (chunk) => {
+    const handleChunk = (chunk) => {
       const text = chunk.toString()
       output += text
+      buffer += text
+
       event.sender.send('download-log', text)
+
+      const lowerText = text.toLowerCase()
+
+      if (
+        lowerText.includes('ffmpeg') ||
+        lowerText.includes('merging formats') ||
+        lowerText.includes('merging') ||
+        lowerText.includes('recoding') ||
+        lowerText.includes('converting') ||
+        lowerText.includes('post-processing')
+      ) {
+        event.sender.send('download-phase', 'converting')
+      }
+
+      const lines = buffer.split(/\r?\n/)
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        const match = line.match(/^PROGRESS\|\s*([\d.]+)%\|/i)
+        if (match) {
+          const percent = Math.min(100, Math.max(0, parseFloat(match[1])))
+          event.sender.send('download-phase', 'downloading')
+          event.sender.send('download-progress', percent)
+        }
+      }
     }
 
-    child.stdout.on('data', pushLog)
-    child.stderr.on('data', pushLog)
+    child.stdout.on('data', handleChunk)
+    child.stderr.on('data', handleChunk)
 
     child.on('close', (code) => {
-      if (code === 0) resolve(output || 'Download completed.\n')
-      else reject(output || `Error code ${code}\n`)
+      if (code === 0) {
+        event.sender.send('download-phase', 'completed')
+        event.sender.send('download-progress', 100)
+        resolve(output || 'Download completed.\n')
+      } else {
+        event.sender.send('download-phase', 'error')
+        reject(output || `Error code ${code}\n`)
+      }
     })
 
     child.on('error', (error) => {
