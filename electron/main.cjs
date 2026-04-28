@@ -34,8 +34,8 @@ function ensureExecutable(filePath) {
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 980,
-    height: 760,
+    width: 1400,
+    height: 1150,
     minWidth: 860,
     minHeight: 680,
     backgroundColor: '#f5f7fb',
