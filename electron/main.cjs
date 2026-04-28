@@ -5,10 +5,31 @@ const { spawn } = require('child_process')
 const isDev = !app.isPackaged
 
 function getYtDlpPath() {
-  if (isDev) {
-    return path.join(__dirname, '..', 'bin', 'yt-dlp.exe')
+  let binaryName
+
+  if (process.platform === 'win32') {
+    binaryName = 'yt-dlp.exe'
+  } else if (process.platform === 'darwin') {
+    binaryName = 'yt-dlp'
+  } else {
+    throw new Error(`Unsupported platform: ${process.platform}`)
   }
-  return path.join(process.resourcesPath, 'bin', 'yt-dlp.exe')
+
+  if (isDev) {
+    return path.join(__dirname, '..', 'bin', binaryName)
+  }
+
+  return path.join(process.resourcesPath, 'bin', binaryName)
+}
+
+function ensureExecutable(filePath) {
+  if (process.platform !== 'darwin') return
+
+  try {
+    fs.chmodSync(filePath, 0o755)
+  } catch (error) {
+    console.warn(`Failed to set executable permission on ${filePath}:`, error.message)
+  }
 }
 
 function createWindow() {
@@ -49,6 +70,77 @@ ipcMain.handle('pick-folder', async () => {
   return result.canceled ? '' : result.filePaths[0]
 })
 
+ipcMain.handle('get-video-info', async (_event, payload) => {
+  const exePath = getYtDlpPath()
+  ensureExecutable(exePath)
+
+  return await new Promise((resolve, reject) => {
+    const args = ['-J', '--no-playlist', payload.url]
+    const child = spawn(exePath, args, { windowsHide: true })
+
+    let output = ''
+    let errorOutput = ''
+
+    child.stdout.on('data', (data) => {
+      output += data.toString()
+    })
+
+    child.stderr.on('data', (data) => {
+      errorOutput += data.toString()
+    })
+
+    child.on('close', () => {
+      try {
+        const data = JSON.parse(output)
+        const formats = Array.isArray(data.formats) ? data.formats : []
+
+        const maxHeight =
+          payload.format === 'bestvideo[height<=720]+bestaudio/best[height<=720]'
+            ? 720
+            : payload.format === 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'
+              ? 1080
+              : Infinity
+
+        const preferredExt = payload.container === 'mkv' ? null : 'mp4'
+
+        const videoFormats = formats.filter((f) => {
+          const hasVideo = f.vcodec && f.vcodec !== 'none'
+          const noAudio = !f.acodec || f.acodec === 'none'
+          const okHeight = !f.height || f.height <= maxHeight
+          const okExt = preferredExt ? f.ext === preferredExt : true
+          return hasVideo && noAudio && okHeight && okExt
+        })
+
+        const audioFormats = formats.filter((f) => {
+          const hasAudio = f.acodec && f.acodec !== 'none'
+          const noVideo = !f.vcodec || f.vcodec === 'none'
+          return hasAudio && noVideo
+        })
+
+        const bestVideo = videoFormats.sort((a, b) => (b.height || 0) - (a.height || 0))[0]
+        const bestAudio = audioFormats.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0]
+
+        const videoSize = bestVideo?.filesize || bestVideo?.filesize_approx || 0
+        const audioSize = bestAudio?.filesize || bestAudio?.filesize_approx || 0
+        const totalSize = videoSize + audioSize
+
+        resolve({
+          duration: data.duration || null,
+          resolution: bestVideo?.height ? `${bestVideo.height}p` : 'Unknown',
+          estimatedSize: totalSize || null,
+          title: data.title || ''
+        })
+      } catch (error) {
+        reject(errorOutput || error.message)
+      }
+    })
+
+    child.on('error', (error) => {
+      reject(error.message)
+    })
+  })
+})
+
 ipcMain.handle('download-video', async (event, payload) => {
   const exePath = getYtDlpPath()
   const args = []
@@ -58,7 +150,7 @@ ipcMain.handle('download-video', async (event, payload) => {
   } else {
     args.push('-f', payload.format)
     args.push('-S', 'res,ext:mp4:m4a')
-    args.push('--recode-video', 'mp4')
+    args.push('--recode-video', payload.container || 'mp4')
   }
 
   const outputDir =

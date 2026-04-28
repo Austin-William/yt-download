@@ -45,11 +45,39 @@ export default function App() {
   const [status, setStatus] = useState('Ready')
   const [logs, setLogs] = useState('No logs yet.')
   const [busy, setBusy] = useState(false)
+  const [container, setContainer] = useState('mp4')
+  const [videoInfo, setVideoInfo] = useState(null)
   const logsRef = useRef(null)
 
   const videoId = useMemo(() => extractVideoId(url), [url])
   const previewImage = videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : ''
-  const displayedLogs = useMemo(() => getLastLogLines(logs, 10), [logs])
+
+  function formatDuration(seconds) {
+    if (!seconds && seconds !== 0) return 'N/A'
+    const hrs = Math.floor(seconds / 3600)
+    const mins = Math.floor((seconds % 3600) / 60)
+    const secs = Math.floor(seconds % 60)
+
+    if (hrs > 0) {
+      return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+    }
+
+    return `${mins}:${String(secs).padStart(2, '0')}`
+  }
+
+  function formatBytes(bytes) {
+    if (!bytes) return 'N/A'
+    const units = ['B', 'KB', 'MB', 'GB']
+    let value = bytes
+    let index = 0
+
+    while (value >= 1024 && index < units.length - 1) {
+      value /= 1024
+      index += 1
+    }
+
+    return `${value.toFixed(value >= 100 ? 0 : 1)} ${units[index]}`
+  }
 
   async function chooseFolder() {
     const folder = await window.desktopAPI.pickFolder()
@@ -70,6 +98,7 @@ export default function App() {
       await window.desktopAPI.downloadVideo({
         url,
         format,
+        container,
         outputDir,
         embedMetadata,
         embedThumbnail
@@ -104,6 +133,28 @@ export default function App() {
     }
   }, [logs])
 
+  useEffect(() => {
+    if (!url.trim() || !window.desktopAPI?.getVideoInfo) {
+      setVideoInfo(null)
+      return
+    }
+
+    const run = async () => {
+      try {
+        const info = await window.desktopAPI.getVideoInfo({
+          url,
+          format,
+          container
+        })
+        setVideoInfo(info)
+      } catch {
+        setVideoInfo(null)
+      }
+    }
+
+    run()
+  }, [url, format, container])
+
   return (
     <div className="page">
       <div className="shell">
@@ -133,6 +184,18 @@ export default function App() {
                     {preset.label}
                   </option>
                 ))}
+              </select>
+            </label>
+
+            <label>
+              File type
+              <select
+                value={container}
+                onChange={(e) => setContainer(e.target.value)}
+                disabled={format === 'audio'}
+              >
+                <option value="mp4">MP4</option>
+                <option value="mkv">MKV</option>
               </select>
             </label>
 
@@ -191,8 +254,16 @@ export default function App() {
           </div>
 
           <div className="metaBox">
-            <p><strong>ID:</strong> {videoId || 'N/A'}</p>
+            <p><strong>Title:</strong> {videoInfo?.title || 'N/A'}</p>
             <p><strong>Status:</strong> {status}</p>
+            <p><strong>Duration:</strong> {formatDuration(videoInfo?.duration)}</p>
+            {format !== 'audio' && (
+              <>
+                <p><strong>File type:</strong> {container.toUpperCase()}</p>
+                <p><strong>Resolution:</strong> {videoInfo?.resolution || 'N/A'}</p>
+                <p><strong>Estimated size:</strong> {formatBytes(videoInfo?.estimatedSize)}</p>
+              </>
+            )}
 
             <pre ref={logsRef} className="logsPre">{logs}</pre>
           </div>
