@@ -1,6 +1,6 @@
 # Youtube Downloader Desktop
 
-Local desktop app with :
+Local desktop app for **Windows** (MacOS not tested yet) with :
 - React + Vite for the UI
 - Electron for the desktop container
 - `yt-dlp` + `ffmpeg` to download and process the video
@@ -30,12 +30,14 @@ npm run dist
 ```
 
 ## Required
-- `yt-dlp` executable file in `/bin` folder
-- `nodejs` executable file in `/bin` folder
-- `ffmpeg` executable file in `/bin` folder
-
 ```text
 bin/yt-dlp.exe
+bin/yt-dlp
+bin/node.exe
+bin/node
+bin/ffmpeg.exe
+bin/ffmpeg
 ```
+> Important : Make sure executable files have enough rights for MacOS (no need for .exe files)
 
 Made with AI for personal purposes
