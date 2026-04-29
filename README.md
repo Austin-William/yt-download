@@ -1,4 +1,10 @@
-# yt-dlp Electron App
+# Youtube Downloader Desktop
+
+Local desktop app with :
+- React + Vite for the UI
+- Electron for the desktop container
+- `yt-dlp` + `ffmpeg` to download and process the video
+- `nodejs` as Javascript runtime for yt-dlp to resolve any encountered problems
 
 Application desktop locale avec :
 - React + Vite pour l'interface
@@ -11,24 +17,25 @@ Application desktop locale avec :
 npm install
 ```
 
-## Développement
+## Development
 
 ```bash
 npm run dev
 ```
 
-## Build application Windows
+## Build Windows application
 
 ```bash
 npm run dist
 ```
 
-## Important
-
-Place `yt-dlp.exe` dans le dossier suivant avant de lancer l'app :
+## Required
+- `yt-dlp` executable file in `/bin` folder
+- `nodejs` executable file in `/bin` folder
+- `ffmpeg` executable file in `/bin` folder
 
 ```text
 bin/yt-dlp.exe
 ```
 
-En build packagé, `electron-builder` copie automatiquement ce binaire dans `resources/bin/yt-dlp.exe` via `extraResources`.
+Made with AI for personal purposes
