@@ -6,10 +6,10 @@ Local desktop app for **Windows** (MacOS not tested yet) with :
 - `yt-dlp` + `ffmpeg` to download and process the video
 - `nodejs` as Javascript runtime for yt-dlp to resolve any encountered problems
 
-Application desktop locale avec :
-- React + Vite pour l'interface
-- Electron pour le conteneur desktop
-- `yt-dlp.exe` appelé en local via Node.js
+Local desktop application :
+- React + Vite for UI
+- Electron for desktop container
+- `yt-dlp.exe` locally called with NodeJS
 
 ## Installation
 
