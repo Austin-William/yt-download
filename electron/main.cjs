@@ -4,6 +4,14 @@ const { spawn } = require('child_process')
 
 const isDev = !app.isPackaged
 let activeDownload = null
+const activeProcesses = new Set()
+
+function trackProcess(child) {
+  activeProcesses.add(child)
+  child.once('close', () => activeProcesses.delete(child))
+  child.once('error', () => activeProcesses.delete(child))
+  return child
+}
 
 function controlDownloadProcess(pid, action) {
   if (process.platform === 'win32') {
@@ -52,6 +60,20 @@ function terminateDownloadProcess(child) {
 
   process.kill(-child.pid, 'SIGTERM')
   return Promise.resolve()
+}
+
+async function stopProcess(child) {
+  if (child.exitCode !== null) return
+
+  const closed = new Promise((resolve) => child.once('close', resolve))
+  try {
+    await terminateDownloadProcess(child)
+  } catch (error) {
+    if (child.exitCode !== null) return
+    throw error
+  }
+
+  if (child.exitCode === null) await closed
 }
 
 function getYtDlpPath() {
@@ -133,6 +155,52 @@ function createWindow() {
     }
   })
 
+  let closePromptOpen = false
+  let allowClose = false
+
+  win.on('close', (event) => {
+    if (allowClose || (!activeDownload && activeProcesses.size === 0)) return
+
+    event.preventDefault()
+    if (closePromptOpen) return
+    closePromptOpen = true
+
+    void (async () => {
+      if (activeDownload) {
+        const { response } = await dialog.showMessageBox(win, {
+          type: 'warning',
+          title: 'Download in progress',
+          message: 'A download is in progress. Quit and stop it?',
+          buttons: ['Quit', 'Keep downloading'],
+          defaultId: 1,
+          cancelId: 1,
+          noLink: true
+        })
+
+        if (response !== 0) {
+          closePromptOpen = false
+          return
+        }
+      }
+
+      if (activeDownload) activeDownload.cancelled = true
+
+      try {
+        await Promise.all([...activeProcesses].map(stopProcess))
+        allowClose = true
+        win.close()
+      } catch (error) {
+        await dialog.showMessageBox(win, {
+          type: 'error',
+          title: 'Unable to quit',
+          message: `The download process could not be stopped: ${error.message || error}`,
+          buttons: ['OK']
+        })
+        closePromptOpen = false
+      }
+    })()
+  })
+
   if (isDev) {
     win.loadURL('http://localhost:5173')
   } else {
@@ -176,7 +244,10 @@ ipcMain.handle('get-video-info', async (_event, payload) => {
       '--no-playlist',
       payload.url
     ]
-    const child = spawn(exePath, args, { windowsHide: true })
+    const child = trackProcess(spawn(exePath, args, {
+      windowsHide: true,
+      detached: process.platform !== 'win32'
+    }))
 
     let output = ''
     let errorOutput = ''
@@ -265,7 +336,7 @@ ipcMain.handle('download-video', async (event, payload) => {
   args.push(payload.url)
 
   return await new Promise((resolve, reject) => {
-    const child = spawn(exePath, args, { windowsHide: true, detached: process.platform !== 'win32' })
+    const child = trackProcess(spawn(exePath, args, { windowsHide: true, detached: process.platform !== 'win32' }))
     const download = { child, cancelled: false, paused: false }
     activeDownload = download
     let output = ''
