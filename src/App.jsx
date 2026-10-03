@@ -22,6 +22,8 @@ function extractVideoId(value) {
 
 const presets = [
   { label: 'Best quality', value: 'bestvideo+bestaudio/best' },
+  { label: '4K max (2160p)', value: 'bestvideo[height<=2160]+bestaudio/best[height<=2160]' },
+  { label: '2K max (1440p)', value: 'bestvideo[height<=1440]+bestaudio/best[height<=1440]' },
   { label: '1080p max', value: 'bestvideo[height<=1080]+bestaudio/best[height<=1080]' },
   { label: '720p max', value: 'bestvideo[height<=720]+bestaudio/best[height<=720]' },
   { label: 'MP3 audio', value: 'audio' }

@@ -309,7 +309,7 @@ ipcMain.handle('download-video', async (event, payload) => {
   } else {
     args.push('-f', payload.format)
     args.push('-S', 'res,ext:mp4:m4a')
-    args.push('--recode-video', payload.container || 'mp4')
+    args.push('--remux-video', payload.container || 'mp4')
   }
 
   const outputDir =
