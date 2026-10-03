@@ -3,6 +3,56 @@ const path = require('path')
 const { spawn } = require('child_process')
 
 const isDev = !app.isPackaged
+let activeDownload = null
+
+function controlDownloadProcess(pid, action) {
+  if (process.platform === 'win32') {
+    const source = [
+      'using System;',
+      'using System.Runtime.InteropServices;',
+      'public static class ProcessControl {',
+      '[DllImport("kernel32.dll", SetLastError=true)] public static extern IntPtr OpenProcess(uint access, bool inherit, int pid);',
+      '[DllImport("ntdll.dll")] public static extern int NtSuspendProcess(IntPtr process);',
+      '[DllImport("ntdll.dll")] public static extern int NtResumeProcess(IntPtr process);',
+      '[DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr handle);',
+      '}'
+    ].join(' ')
+    const method = action === 'pause' ? 'NtSuspendProcess' : 'NtResumeProcess'
+    const script = `Add-Type '${source}'; $processes = @(Get-CimInstance Win32_Process); $ids = [System.Collections.Generic.List[int]]::new(); $ids.Add(${pid}); for ($index = 0; $index -lt $ids.Count; $index++) { foreach ($process in $processes) { $processId = [int]$process.ProcessId; if ([int]$process.ParentProcessId -eq $ids[$index] -and -not $ids.Contains($processId)) { $ids.Add($processId) } } }; if ('${action}' -eq 'pause') { $ids.Reverse() }; foreach ($processId in $ids) { $handle = [ProcessControl]::OpenProcess(0x0800, $false, $processId); if ($handle -eq [IntPtr]::Zero) { if ($processId -eq ${pid}) { throw 'Unable to open download process.' }; continue }; $result = [ProcessControl]::${method}($handle); [ProcessControl]::CloseHandle($handle) | Out-Null; if ($result -ne 0) { throw 'Unable to control download process.' } }`
+
+    return new Promise((resolve, reject) => {
+      const powershell = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true })
+      let errorOutput = ''
+      powershell.stderr.on('data', (data) => { errorOutput += data.toString() })
+      powershell.on('error', reject)
+      powershell.on('close', (code) => {
+        if (code === 0) resolve()
+        else reject(new Error(errorOutput || 'Unable to control download process.'))
+      })
+    })
+  }
+
+  process.kill(-pid, action === 'pause' ? 'SIGSTOP' : 'SIGCONT')
+  return Promise.resolve()
+}
+
+function terminateDownloadProcess(child) {
+  if (process.platform === 'win32') {
+    return new Promise((resolve, reject) => {
+      const taskkill = spawn('taskkill.exe', ['/pid', String(child.pid), '/t', '/f'], { windowsHide: true })
+      let errorOutput = ''
+      taskkill.stderr.on('data', (data) => { errorOutput += data.toString() })
+      taskkill.on('error', reject)
+      taskkill.on('close', (code) => {
+        if (code === 0) resolve()
+        else reject(new Error(errorOutput || 'Unable to cancel download.'))
+      })
+    })
+  }
+
+  process.kill(-child.pid, 'SIGTERM')
+  return Promise.resolve()
+}
 
 function getYtDlpPath() {
   let binaryName
@@ -121,6 +171,7 @@ ipcMain.handle('get-video-info', async (_event, payload) => {
       '--no-js-runtimes',
       '--js-runtimes', `node:${nodePath}`,
       '--ffmpeg-location', ffmpegPath,
+      ...(payload.format !== 'audio' ? ['-f', payload.format, '-S', 'res,ext:mp4:m4a'] : []),
       '-J',
       '--no-playlist',
       payload.url
@@ -141,42 +192,23 @@ ipcMain.handle('get-video-info', async (_event, payload) => {
     child.on('close', () => {
       try {
         const data = JSON.parse(output)
-        const formats = Array.isArray(data.formats) ? data.formats : []
-
-        const maxHeight =
-          payload.format === 'bestvideo[height<=720]+bestaudio/best[height<=720]'
-            ? 720
-            : payload.format === 'bestvideo[height<=1080]+bestaudio/best[height<=1080]'
-              ? 1080
-              : Infinity
-
-        const preferredExt = payload.container === 'mkv' ? null : 'mp4'
-
-        const videoFormats = formats.filter((f) => {
-          const hasVideo = f.vcodec && f.vcodec !== 'none'
-          const noAudio = !f.acodec || f.acodec === 'none'
-          const okHeight = !f.height || f.height <= maxHeight
-          const okExt = preferredExt ? f.ext === preferredExt : true
-          return hasVideo && noAudio && okHeight && okExt
-        })
-
-        const audioFormats = formats.filter((f) => {
-          const hasAudio = f.acodec && f.acodec !== 'none'
-          const noVideo = !f.vcodec || f.vcodec === 'none'
-          return hasAudio && noVideo
-        })
-
-        const bestVideo = videoFormats.sort((a, b) => (b.height || 0) - (a.height || 0))[0]
-        const bestAudio = audioFormats.sort((a, b) => (b.abr || 0) - (a.abr || 0))[0]
-
-        const videoSize = bestVideo?.filesize || bestVideo?.filesize_approx || 0
-        const audioSize = bestAudio?.filesize || bestAudio?.filesize_approx || 0
-        const totalSize = videoSize + audioSize
+        const requestedFormats = Array.isArray(data.requested_formats) ? data.requested_formats : []
+        const requestedSizes = requestedFormats.map((format) => format.filesize ?? format.filesize_approx)
+        const videoFormat = requestedFormats.find((format) => format.vcodec && format.vcodec !== 'none')
+        const selectedSize =
+          requestedFormats.length > 0 && requestedSizes.every((size) => Number.isFinite(size) && size > 0)
+            ? requestedSizes.reduce((total, size) => total + size, 0)
+            : null
+        const totalSize = selectedSize || data.filesize || data.filesize_approx || null
 
         resolve({
           duration: data.duration || null,
-          resolution: bestVideo?.height ? `${bestVideo.height}p` : 'Unknown',
-          estimatedSize: totalSize || null,
+          resolution: videoFormat?.height
+            ? `${videoFormat.height}p`
+            : data.height
+              ? `${data.height}p`
+              : 'Unknown',
+          estimatedSize: totalSize,
           title: data.title || ''
         })
       } catch (error) {
@@ -190,6 +222,8 @@ ipcMain.handle('get-video-info', async (_event, payload) => {
   })
 })
 ipcMain.handle('download-video', async (event, payload) => {
+  if (activeDownload) throw new Error('A download is already running.')
+
   const exePath = getYtDlpPath()
   const nodePath = getNodePath()
   const ffmpegPath = getFfmpegPath()
@@ -231,7 +265,9 @@ ipcMain.handle('download-video', async (event, payload) => {
   args.push(payload.url)
 
   return await new Promise((resolve, reject) => {
-    const child = spawn(exePath, args, { windowsHide: true })
+    const child = spawn(exePath, args, { windowsHide: true, detached: process.platform !== 'win32' })
+    const download = { child, cancelled: false, paused: false }
+    activeDownload = download
     let output = ''
     let buffer = ''
 
@@ -272,6 +308,12 @@ ipcMain.handle('download-video', async (event, payload) => {
     child.stderr.on('data', handleChunk)
 
     child.on('close', (code) => {
+      if (activeDownload === download) activeDownload = null
+      if (download.cancelled) {
+        event.sender.send('download-phase', 'cancelled')
+        reject('Download cancelled.')
+        return
+      }
       if (code === 0) {
         event.sender.send('download-phase', 'completed')
         event.sender.send('download-progress', 100)
@@ -283,7 +325,29 @@ ipcMain.handle('download-video', async (event, payload) => {
     })
 
     child.on('error', (error) => {
+      if (activeDownload === download) activeDownload = null
       reject(error.message)
     })
   })
+})
+
+ipcMain.handle('pause-download', async () => {
+  if (!activeDownload || activeDownload.paused) return false
+  await controlDownloadProcess(activeDownload.child.pid, 'pause')
+  activeDownload.paused = true
+  return true
+})
+
+ipcMain.handle('resume-download', async () => {
+  if (!activeDownload || !activeDownload.paused) return false
+  await controlDownloadProcess(activeDownload.child.pid, 'resume')
+  activeDownload.paused = false
+  return true
+})
+
+ipcMain.handle('cancel-download', async () => {
+  if (!activeDownload) return false
+  activeDownload.cancelled = true
+  await terminateDownloadProcess(activeDownload.child)
+  return true
 })

@@ -50,6 +50,7 @@ export default function App() {
   const [progress, setProgress] = useState(0)
   const [downloadPhase, setDownloadPhase] = useState('idle')
   const logsRef = useRef(null)
+  const pauseRequestedRef = useRef(false)
 
   const videoId = useMemo(() => extractVideoId(url), [url])
   const previewImage = videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : ''
@@ -94,6 +95,7 @@ export default function App() {
 
     setBusy(true)
     setProgress(0)
+    pauseRequestedRef.current = false
     setDownloadPhase('downloading')
     setStatus('Downloading...')
     setLogs('')
@@ -111,12 +113,51 @@ export default function App() {
       setDownloadPhase('completed')
       setStatus('Download completed.')
     } catch (error) {
-      setLogs(String(error))
-      setDownloadPhase('error')
-      setStatus('Download failed.')
+      if (String(error).includes('Download cancelled.')) {
+        setDownloadPhase('cancelled')
+        setStatus('Download cancelled.')
+      } else {
+        setLogs(String(error))
+        setDownloadPhase('error')
+        setStatus('Download failed.')
+      }
     } finally {
+      pauseRequestedRef.current = false
       setBusy(false)
     }
+  }
+
+  async function toggleDownloadPause() {
+    if (downloadPhase === 'paused') {
+      try {
+        const resumed = await window.desktopAPI.resumeDownload()
+        if (!resumed) return
+        pauseRequestedRef.current = false
+        setDownloadPhase('downloading')
+        setStatus('Downloading...')
+      } catch (error) {
+        setStatus(`Unable to resume download: ${error.message || error}`)
+      }
+    } else {
+      pauseRequestedRef.current = true
+      try {
+        const paused = await window.desktopAPI.pauseDownload()
+        if (!paused) {
+          pauseRequestedRef.current = false
+          setStatus('Unable to pause download.')
+          return
+        }
+        setDownloadPhase('paused')
+        setStatus('Download paused.')
+      } catch (error) {
+        pauseRequestedRef.current = false
+        setStatus(`Unable to pause download: ${error.message || error}`)
+      }
+    }
+  }
+
+  async function cancelDownload() {
+    await window.desktopAPI.cancelDownload()
   }
 
   useEffect(() => {
@@ -178,6 +219,7 @@ export default function App() {
     if (!window.desktopAPI?.onDownloadPhase) return
 
     const unsubscribe = window.desktopAPI.onDownloadPhase((value) => {
+      if (pauseRequestedRef.current && ['downloading', 'converting'].includes(value)) return
       setDownloadPhase(value)
     })
 
@@ -265,9 +307,21 @@ export default function App() {
             </label>
           </div>
 
-          <button className="primaryBtn" onClick={startDownload} disabled={busy}>
-            {busy ? 'Downloading...' : 'Start download'}
-          </button>
+          <div className="downloadActions">
+            <button className="primaryBtn" onClick={startDownload} disabled={busy}>
+              {busy ? 'Downloading...' : 'Start download'}
+            </button>
+            {busy && (
+              <>
+                <button className="secondaryBtn" onClick={toggleDownloadPause} disabled={downloadPhase === 'converting'}>
+                  {downloadPhase === 'paused' ? 'Resume' : 'Pause'}
+                </button>
+                <button className="cancelBtn" onClick={cancelDownload}>
+                  Cancel
+                </button>
+              </>
+            )}
+          </div>
         </section>
 
         <section className="card previewGrid">

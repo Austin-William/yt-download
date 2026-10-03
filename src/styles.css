@@ -148,11 +148,12 @@ select {
 }
 
 .primaryBtn,
-.secondaryBtn {
+.secondaryBtn,
+.cancelBtn {
   height: 48px;
   border-radius: 14px;
   border: 0;
-  padding: 0 18px;
+  width: 140px;
   cursor: pointer;
 }
 
@@ -164,6 +165,18 @@ select {
 .secondaryBtn {
   background: var(--accent-2);
   color: var(--text);
+}
+
+.cancelBtn {
+  background: #fee4e2;
+  color: #b42318;
+}
+
+.downloadActions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .previewGrid {

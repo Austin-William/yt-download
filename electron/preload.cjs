@@ -3,6 +3,9 @@ const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('desktopAPI', {
   pickFolder: () => ipcRenderer.invoke('pick-folder'),
   downloadVideo: (payload) => ipcRenderer.invoke('download-video', payload),
+  pauseDownload: () => ipcRenderer.invoke('pause-download'),
+  resumeDownload: () => ipcRenderer.invoke('resume-download'),
+  cancelDownload: () => ipcRenderer.invoke('cancel-download'),
   getVideoInfo: (payload) => ipcRenderer.invoke('get-video-info', payload),
   onDownloadPhase: (callback) => {
     const listener = (_event, value) => callback(value)
